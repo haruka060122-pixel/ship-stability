@@ -1,0 +1,1664 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>廂型船壓載水與自由液面效應即時模擬器 — Excel 公式完全同步版</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600;700;800&family=Noto+Sans+TC:wght@400;500;700;900&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg-deep: #06141b;
+      --bg-panel: #0b222d;
+      --bg-card: #102d3b;
+      --accent-mint: #1ee396;
+      --accent-cyan: #38bdf8;
+      --accent-gold: #facc15;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: 'Inter', 'Noto Sans TC', sans-serif;
+      background: radial-gradient(circle at 20% 0%, #0d2b38 0%, #06141b 60%, #040d12 100%);
+      color: #e6f4f8;
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    .mono {
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    /* 1. 頂部懸浮置頂視覺化船體區 */
+    .sticky-stage {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: linear-gradient(180deg, rgba(6, 20, 27, 0.98) 0%, rgba(9, 28, 37, 0.95) 100%);
+      backdrop-filter: blur(14px);
+      border-bottom: 1px solid rgba(56, 189, 248, 0.3);
+      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.6);
+    }
+
+    /* 固定高度 Canvas 容器，確保寬高永遠大於 0 */
+    .canvas-shell {
+      position: relative;
+      width: 100%;
+      height: 230px;
+      border-radius: 14px;
+      overflow: hidden;
+      background: linear-gradient(180deg, #071923 0%, #0a2533 58%, #072f42 58.5%, #041b27 100%);
+      border: 1px solid rgba(56, 189, 248, 0.28);
+    }
+
+    @media (min-width: 768px) {
+      .canvas-shell {
+        height: 280px;
+      }
+    }
+
+    #shipCanvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+
+    /* 互動式底線題目輸入框 */
+    .blank-input {
+      display: inline-block;
+      background: rgba(250, 204, 21, 0.14);
+      border: none;
+      border-bottom: 2px solid #facc15;
+      color: #fef08a;
+      font-weight: 700;
+      text-align: center;
+      padding: 1px 6px;
+      margin: 0 2px;
+      border-radius: 5px 5px 0 0;
+      transition: all 0.18s ease;
+      font-family: 'JetBrains Mono', 'Noto Sans TC', sans-serif;
+    }
+
+    .blank-input:focus {
+      outline: none;
+      background: rgba(250, 204, 21, 0.28);
+      border-bottom-color: #1ee396;
+      color: #ffffff;
+      box-shadow: 0 4px 12px rgba(250, 204, 21, 0.25);
+    }
+
+    /* Excel 三色計算表樣式 */
+    .excel-yellow {
+      background: rgba(250, 204, 21, 0.13);
+      border: 1px solid rgba(250, 204, 21, 0.45);
+      color: #fef08a;
+    }
+
+    .excel-yellow-input {
+      background: rgba(250, 204, 21, 0.22);
+      border: 1px solid rgba(250, 204, 21, 0.72);
+      color: #fffbeb;
+      font-weight: 700;
+      border-radius: 8px;
+      padding: 5px 9px;
+      width: 100%;
+      text-align: right;
+      font-family: 'JetBrains Mono', monospace;
+      transition: all 0.15s ease;
+    }
+
+    .excel-yellow-input:focus {
+      outline: none;
+      background: rgba(250, 204, 21, 0.35);
+      border-color: #fde047;
+      box-shadow: 0 0 0 3px rgba(250, 204, 21, 0.22);
+    }
+
+    .excel-green {
+      background: rgba(30, 227, 150, 0.11);
+      border: 1px solid rgba(30, 227, 150, 0.35);
+    }
+
+    .excel-blue {
+      background: rgba(56, 189, 248, 0.14);
+      border: 1px solid rgba(56, 189, 248, 0.45);
+    }
+
+    /* 自訂水艙滑桿 */
+    input[type="range"].tank-slider {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 100%;
+      height: 8px;
+      border-radius: 999px;
+      background: rgba(148, 163, 184, 0.25);
+      outline: none;
+    }
+
+    input[type="range"].tank-slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      background: #38bdf8;
+      border: 2px solid #e0f2fe;
+      cursor: pointer;
+      box-shadow: 0 2px 8px rgba(56, 189, 248, 0.55);
+    }
+
+    input[type="range"].tank-slider.slack::-webkit-slider-thumb {
+      background: #facc15;
+      border-color: #fef9c3;
+      box-shadow: 0 2px 8px rgba(250, 204, 21, 0.65);
+    }
+
+    @keyframes pulseDanger {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.6); }
+      50% { box-shadow: 0 0 0 8px rgba(239, 68, 68, 0); }
+    }
+
+    .alarm-danger {
+      animation: pulseDanger 1.4s infinite;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- 1. 頂部懸浮置頂視覺化船體區 -->
+  <header class="sticky-stage">
+    <div class="max-w-6xl mx-auto px-3 sm:px-6 py-2.5 sm:py-3">
+      <!-- 頂部標題與安全警報列 -->
+      <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
+        <div class="flex items-center gap-2.5">
+          <span class="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-sky-500/20 border border-sky-400/40 text-sky-300 font-bold text-sm">⚓</span>
+          <div>
+            <h1 class="text-sm sm:text-base font-extrabold tracking-wide text-white leading-tight">
+              廂型船壓載水與自由液面效應即時模擬器
+            </h1>
+            <p class="text-[11px] text-sky-300/80">
+              完全同步《移動貨物對船舶重心影響計算表.xlsx》公式與進位邏輯
+            </p>
+          </div>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-1.5 sm:gap-2">
+          <!-- 三段式安全警報燈號 -->
+          <div id="alarmBadge" class="px-2.5 py-1 rounded-full text-xs font-bold border flex items-center gap-1.5 bg-emerald-500/15 border-emerald-400/40 text-emerald-300">
+            <span id="alarmDot" class="w-2 h-2 rounded-full bg-emerald-400"></span>
+            <span id="alarmText">正常：未達5°</span>
+          </div>
+
+          <!-- 警報音開關 -->
+          <button id="audioToggleBtn" type="button" onclick="toggleAudio()"
+            class="px-2.5 py-1 rounded-lg text-xs font-semibold bg-slate-800/90 hover:bg-slate-700 border border-slate-600/60 text-slate-200 transition">
+            🔊 警報音：開
+          </button>
+
+          <!-- 預設重設按鈕 -->
+          <button type="button" onclick="resetToDefault()"
+            class="px-2.5 py-1 rounded-lg text-xs font-semibold bg-amber-500/20 hover:bg-amber-500/30 border border-amber-400/50 text-amber-200 transition">
+            ↺ 重設預設
+          </button>
+        </div>
+      </div>
+
+      <!-- 船體橫剖面即時視覺化 Canvas 畫布 -->
+      <div class="canvas-shell" id="canvasContainer">
+        <canvas id="shipCanvas"></canvas>
+
+        <!-- 左上角圖層切換按鈕 -->
+        <div class="absolute top-2 left-2 flex flex-wrap items-center gap-1.5 z-10">
+          <button type="button" id="btnLayerG" onclick="toggleLayer('showG')"
+            class="px-2 py-1 rounded-md text-[11px] font-bold bg-sky-500/30 border border-sky-400/60 text-sky-100 backdrop-blur-sm transition">
+            ✓ G/Gv點
+          </button>
+          <button type="button" id="btnLayerM" onclick="toggleLayer('showM')"
+            class="px-2 py-1 rounded-md text-[11px] font-bold bg-emerald-500/30 border border-emerald-400/60 text-emerald-100 backdrop-blur-sm transition">
+            ✓ M點
+          </button>
+          <button type="button" id="btnLayerFSM" onclick="toggleLayer('showFSM')"
+            class="px-2 py-1 rounded-md text-[11px] font-bold bg-amber-500/30 border border-amber-400/60 text-amber-100 backdrop-blur-sm transition">
+            ✓ 自由液面線
+          </button>
+        </div>
+
+        <!-- 右上角即時橫傾方向儀表 -->
+        <div class="absolute top-2 right-2 pointer-events-none px-2.5 py-1 rounded-xl bg-slate-950/80 border border-sky-400/35 text-right backdrop-blur-sm">
+          <div class="text-[10px] text-slate-400 uppercase tracking-wider">即時橫傾角 θ</div>
+          <div id="hudHeelDirection" class="text-xs sm:text-sm font-extrabold text-amber-300 mono">
+            左傾 3.57° (Port)
+          </div>
+        </div>
+      </div>
+
+      <!-- 4 個即時指標膠囊 -->
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-2">
+        <div class="rounded-xl px-3 py-1.5 bg-sky-950/75 border border-sky-400/35 flex items-center justify-between">
+          <div>
+            <div class="text-[11px] text-sky-300/85">橫傾角 θ</div>
+            <div id="pillAngle" class="text-base sm:text-lg font-extrabold text-sky-200 mono">3.57°</div>
+          </div>
+          <span id="pillDirTag" class="text-[11px] font-bold px-2 py-0.5 rounded bg-sky-500/20 text-sky-300">左傾</span>
+        </div>
+
+        <div class="rounded-xl px-3 py-1.5 bg-slate-900/80 border border-slate-700/70 flex items-center justify-between">
+          <div>
+            <div class="text-[11px] text-slate-400">剩餘排水量 (W−w)</div>
+            <div id="pillDisp" class="text-base sm:text-lg font-extrabold text-white mono">9911.44 <span class="text-xs font-normal text-slate-400">t</span></div>
+          </div>
+          <span id="pillWeightDiff" class="text-[11px] font-semibold text-amber-300 mono">−88.56t</span>
+        </div>
+
+        <div class="rounded-xl px-3 py-1.5 bg-emerald-950/60 border border-emerald-400/30 flex items-center justify-between">
+          <div>
+            <div class="text-[11px] text-emerald-300/85">自由液面損失 G₁Gv</div>
+            <div id="pillFsmLoss" class="text-base sm:text-lg font-extrabold text-emerald-300 mono">0.101 <span class="text-xs font-normal text-emerald-400/70">m</span></div>
+          </div>
+          <span class="text-[10px] text-emerald-400/80 mono" id="pillFsmVal">FSM 996.3</span>
+        </div>
+
+        <div class="rounded-xl px-3 py-1.5 bg-amber-950/50 border border-amber-400/35 flex items-center justify-between">
+          <div>
+            <div class="text-[11px] text-amber-200/85">有效新 GM</div>
+            <div id="pillNewGm" class="text-base sm:text-lg font-extrabold text-amber-300 mono">0.641 <span class="text-xs font-normal text-amber-300/70">m</span></div>
+          </div>
+          <span class="text-[10px] text-amber-200/80 mono" id="pillOrigGm">原 0.800m</span>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- 主內容區 -->
+  <main class="max-w-6xl mx-auto px-3 sm:px-6 py-5 space-y-6 pb-16">
+
+    <!-- 2. 互動式底線題目欄 -->
+    <section class="rounded-2xl bg-[#0b222d]/95 border border-sky-400/25 p-4 sm:p-6 shadow-xl">
+      <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+        <div class="flex items-center gap-2">
+          <span class="px-2.5 py-0.5 rounded-md bg-amber-400/20 border border-amber-400/40 text-amber-300 text-xs font-bold mono">SECTION 00</span>
+          <h2 class="text-base sm:text-lg font-bold text-white">互動式底線題目欄（點擊金色底線可直接修改數值與艙間）</h2>
+        </div>
+        <span class="text-xs text-sky-300/85">支援輸入「左2」、「2P」、「右1」、「3S」、「右舷艙間」等</span>
+      </div>
+
+      <!-- 題目敘述與可打字金色底線欄位 -->
+      <div class="rounded-xl bg-slate-950/70 border border-slate-700/75 p-4 sm:p-5 text-sm sm:text-base leading-loose text-slate-100">
+        某船在有壓載水情況下，原本均裝滿
+        <input id="qLiquidName" type="text" value="海水" class="blank-input w-16" oninput="syncFromProblem('liquid')" />
+        （比重
+        <input id="qDensity" type="number" step="0.001" value="1.025" class="blank-input w-20" oninput="syncFromProblem('density')" />
+        ），排水量
+        <input id="qDisp" type="number" step="10" value="10000" class="blank-input w-24" oninput="syncFromProblem('disp')" />
+        噸，KM =
+        <input id="qKm" type="number" step="0.1" value="8.2" class="blank-input w-16" oninput="syncFromProblem('km')" />
+        公尺，KG =
+        <input id="qKg" type="number" step="0.1" value="7.4" class="blank-input w-16" oninput="syncFromProblem('kg')" />
+        公尺。其壓載水艙長
+        <input id="qLength" type="number" step="0.5" value="16" class="blank-input w-16" oninput="syncFromProblem('length')" />
+        公尺、寬
+        <input id="qBreadth" type="number" step="0.5" value="18" class="blank-input w-16" oninput="syncFromProblem('breadth')" />
+        公尺、深
+        <input id="qDepth" type="number" step="0.1" value="1.2" class="blank-input w-16" oninput="syncFromProblem('depth')" />
+        公尺，有
+        <input id="qBulkheads" type="number" min="0" max="5" step="1" value="1" class="blank-input w-12" oninput="syncFromProblem('bulkheads')" />
+        道縱向水密艙壁將其分隔為完全相等的
+        <input id="qTankCount" type="number" min="1" max="6" step="1" value="2" class="blank-input w-12" oninput="syncFromProblem('tankCount')" />
+        個艙間。若將
+        <input id="qTargetTank" type="text" value="右舷艙間" class="blank-input w-28" oninput="syncFromProblem('targetTank')" />
+        的水量泵出
+        <input id="qFraction" type="text" value="一半" class="blank-input w-24" oninput="syncFromProblem('fraction')" />
+        ，試求船舶橫傾角度。
+      </div>
+
+      <!-- 📌 題意解析即時狀態列 -->
+      <div class="mt-3 rounded-xl bg-amber-500/10 border border-amber-400/35 px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-2 text-xs sm:text-sm">
+        <div id="problemParseStatus" class="text-amber-200 font-medium">
+          📌 <strong>題意解析：</strong>鎖定 <span class="text-yellow-300 font-bold">右舷艙間 (1S)</span>，泵出 <span class="text-yellow-300 font-bold">88.56 噸</span>（剩餘 50%），水平力臂 <span class="mono text-sky-300">dh = 4.50 m</span>，垂直力臂 <span class="mono text-sky-300">dv = 6.50 m</span>（其餘艙間維持 100% 滿載）。
+        </div>
+      </div>
+
+      <!-- 快速測試按鈕 -->
+      <div class="mt-3 flex flex-wrap items-center gap-2 text-xs">
+        <span class="text-slate-400">快速切換範例：</span>
+        <button type="button" onclick="applyPreset('excelDefault')"
+          class="px-3 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 border border-amber-400/45 text-amber-200 font-semibold transition">
+          📋 Excel 原題（2艙・右舷泵出一半 → 3.57°）
+        </button>
+        <button type="button" onclick="applyPreset('port2of4')"
+          class="px-3 py-1.5 rounded-lg bg-sky-500/15 hover:bg-sky-500/25 border border-sky-400/40 text-sky-200 font-semibold transition">
+          🚢 4艙配置・指定「左2」泵出一半
+        </button>
+        <button type="button" onclick="applyPreset('singleSlack')"
+          class="px-3 py-1.5 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-400/40 text-emerald-200 font-semibold transition">
+          🌊 無縱向艙壁（單一全寬艙自由液面）
+        </button>
+      </div>
+    </section>
+
+    <!-- 3. 100% 同步《移動貨物對船舶重心影響計算表.xlsx》三色計算表 -->
+    <section class="rounded-2xl bg-[#0b222d]/95 border border-sky-400/25 p-4 sm:p-6 shadow-xl">
+      <div class="flex flex-wrap items-center justify-between gap-2 mb-4">
+        <div>
+          <div class="flex items-center gap-2">
+            <span class="px-2.5 py-0.5 rounded-md bg-emerald-400/20 border border-emerald-400/40 text-emerald-300 text-xs font-bold mono">SECTION 01</span>
+            <h2 class="text-base sm:text-lg font-bold text-white">移動貨物對船舶重心影響計算表（Excel 三色公式完全同步）</h2>
+          </div>
+          <p class="text-xs text-slate-400 mt-1">
+            黃色欄位可直接修改變動值；綠色欄位依 Excel 公式自動計算；藍色欄位嚴格採用 <code class="text-sky-300">ROUND(G₂Gv, 3) / ROUND(新 GM, 3)</code> 求得最終橫傾角。
+          </p>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-4">
+
+        <!-- 一、輸入變動值（黃色底） -->
+        <div class="lg:col-span-5 rounded-xl excel-yellow p-4 flex flex-col justify-between">
+          <div>
+            <div class="flex items-center justify-between pb-2.5 mb-3 border-b border-yellow-400/30">
+              <h3 class="text-sm font-extrabold text-yellow-300 tracking-wide">一、輸入變動值（黃色底）</h3>
+              <span class="text-[11px] px-2 py-0.5 rounded bg-yellow-400/20 text-yellow-200">可直接編輯</span>
+            </div>
+
+            <div class="space-y-2 text-xs sm:text-sm">
+              <div class="grid grid-cols-12 items-center gap-2">
+                <label class="col-span-7 text-yellow-100/95">船舶排水量 <span class="mono font-bold text-yellow-300">W</span> (ton)</label>
+                <div class="col-span-5">
+                  <input id="inW" type="number" step="1" value="10000" class="excel-yellow-input" oninput="onExcelInput()" />
+                </div>
+              </div>
+
+              <div class="grid grid-cols-12 items-center gap-2">
+                <label class="col-span-7 text-yellow-100/95">龍骨至穩心 <span class="mono font-bold text-yellow-300">KM</span> (m)</label>
+                <div class="col-span-5">
+                  <input id="inKM" type="number" step="0.01" value="8.2" class="excel-yellow-input" oninput="onExcelInput()" />
+                </div>
+              </div>
+
+              <div class="grid grid-cols-12 items-center gap-2">
+                <label class="col-span-7 text-yellow-100/95">龍骨至重心 <span class="mono font-bold text-yellow-300">KG</span> (m)</label>
+                <div class="col-span-5">
+                  <input id="inKG" type="number" step="0.01" value="7.4" class="excel-yellow-input" oninput="onExcelInput()" />
+                </div>
+              </div>
+
+              <div class="grid grid-cols-12 items-center gap-2">
+                <label class="col-span-7 text-yellow-100/95">被移動貨物重量 <span class="mono font-bold text-yellow-300">w</span> (ton)</label>
+                <div class="col-span-5">
+                  <input id="inw" type="number" step="0.01" value="88.56" class="excel-yellow-input" oninput="onExcelInput()" />
+                </div>
+              </div>
+
+              <div class="grid grid-cols-12 items-center gap-2">
+                <label class="col-span-7 text-yellow-100/95">垂直移動距離 <span class="mono font-bold text-yellow-300">dv</span> (m)</label>
+                <div class="col-span-5">
+                  <input id="indv" type="number" step="0.01" value="6.5" class="excel-yellow-input" oninput="onExcelInput()" />
+                </div>
+              </div>
+
+              <div class="grid grid-cols-12 items-center gap-2">
+                <label class="col-span-7 text-yellow-100/95">水平移動距離 <span class="mono font-bold text-yellow-300">dh</span> (m)</label>
+                <div class="col-span-5">
+                  <input id="indh" type="number" step="0.01" value="4.5" class="excel-yellow-input" oninput="onExcelInput()" />
+                </div>
+              </div>
+
+              <div class="grid grid-cols-12 items-center gap-2">
+                <label class="col-span-7 text-yellow-100/95">自由液面長度 <span class="mono font-bold text-yellow-300">L</span> (m)</label>
+                <div class="col-span-5">
+                  <input id="inL" type="number" step="0.1" value="16" class="excel-yellow-input" oninput="onExcelInput()" />
+                </div>
+              </div>
+
+              <div class="grid grid-cols-12 items-center gap-2">
+                <label class="col-span-7 text-yellow-100/95">自由液面寬度 <span class="mono font-bold text-yellow-300">B</span> (m)</label>
+                <div class="col-span-5">
+                  <input id="inB" type="number" step="0.1" value="9" class="excel-yellow-input" oninput="onExcelInput()" />
+                </div>
+              </div>
+
+              <div class="grid grid-cols-12 items-center gap-2">
+                <label class="col-span-7 text-yellow-100/95">液體密度 <span class="mono font-bold text-yellow-300">d1</span> (t/m³)</label>
+                <div class="col-span-5">
+                  <input id="ind1" type="number" step="0.001" value="1.025" class="excel-yellow-input" oninput="onExcelInput()" />
+                </div>
+              </div>
+
+              <div class="grid grid-cols-12 items-center gap-2">
+                <label class="col-span-7 text-yellow-100/95">分隔數 <span class="mono font-bold text-yellow-300">n</span> (艙)</label>
+                <div class="col-span-5">
+                  <input id="inn" type="number" min="1" step="1" value="1" class="excel-yellow-input" oninput="onExcelInput()" />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="mt-3 pt-2 border-t border-yellow-400/25 text-[11px] text-yellow-200/80">
+            ※ 公式基準：<span class="mono">dv = |KG − kg_water|</span>（題目預設 <span class="mono">6.5m</span>），<span class="mono">dh = |tcg|</span>。
+          </div>
+        </div>
+
+        <!-- 二、自動計算（綠色底） -->
+        <div class="lg:col-span-4 rounded-xl excel-green p-4 flex flex-col justify-between">
+          <div>
+            <div class="flex items-center justify-between pb-2.5 mb-3 border-b border-emerald-400/30">
+              <h3 class="text-sm font-extrabold text-emerald-300 tracking-wide">二、自動計算（綠色底）</h3>
+              <span class="text-[11px] px-2 py-0.5 rounded bg-emerald-400/20 text-emerald-200">即時運算</span>
+            </div>
+
+            <div class="space-y-2 text-xs">
+              <div class="p-2 rounded-lg bg-slate-950/60 border border-emerald-500/20">
+                <div class="flex justify-between items-baseline">
+                  <span class="font-bold text-emerald-200">原 GM</span>
+                  <span id="outOrigGM" class="text-sm font-extrabold text-white mono">0.800 m</span>
+                </div>
+                <div class="text-[11px] text-emerald-300/75 mono mt-0.5">= KM − KG</div>
+              </div>
+
+              <div class="p-2 rounded-lg bg-slate-950/60 border border-emerald-500/20">
+                <div class="flex justify-between items-baseline">
+                  <span class="font-bold text-emerald-200">G 垂直移動量 GG₁</span>
+                  <span id="outGG1" class="text-sm font-extrabold text-white mono">0.058 m</span>
+                </div>
+                <div class="flex justify-between text-[11px] text-emerald-300/75 mono mt-0.5">
+                  <span>= (w × dv) / (W − w)</span>
+                  <span id="rawGG1" class="text-slate-400">(0.05808)</span>
+                </div>
+              </div>
+
+              <div class="p-2 rounded-lg bg-slate-950/60 border border-emerald-500/20">
+                <div class="flex justify-between items-baseline">
+                  <span class="font-bold text-emerald-200">G 水平移動量 G₂Gv</span>
+                  <span id="outG2Gv" class="text-sm font-extrabold text-white mono">0.040 m</span>
+                </div>
+                <div class="flex justify-between text-[11px] text-emerald-300/75 mono mt-0.5">
+                  <span>= (w × dh) / (W − w)</span>
+                  <span id="rawG2Gv" class="text-slate-400">(0.04021)</span>
+                </div>
+              </div>
+
+              <div class="p-2 rounded-lg bg-slate-950/60 border border-emerald-500/20">
+                <div class="flex justify-between items-baseline">
+                  <span class="font-bold text-emerald-200">自由液面慣性矩 i</span>
+                  <span id="outI" class="text-sm font-extrabold text-white mono">972.00 m⁴</span>
+                </div>
+                <div class="text-[11px] text-emerald-300/75 mono mt-0.5">= (L × B³) / 12</div>
+              </div>
+
+              <div class="p-2 rounded-lg bg-slate-950/60 border border-emerald-500/20">
+                <div class="flex justify-between items-baseline">
+                  <span class="font-bold text-emerald-200">自由液面力矩 FSM</span>
+                  <span id="outFSM" class="text-sm font-extrabold text-white mono">996.30 t·m</span>
+                </div>
+                <div class="text-[11px] text-emerald-300/75 mono mt-0.5">= i × d1</div>
+              </div>
+
+              <div class="p-2 rounded-lg bg-slate-950/60 border border-emerald-500/20">
+                <div class="flex justify-between items-baseline">
+                  <span class="font-bold text-emerald-200">GM 減少值 G₁Gv</span>
+                  <span id="outG1Gv" class="text-sm font-extrabold text-white mono">0.101 m</span>
+                </div>
+                <div class="flex justify-between text-[11px] text-emerald-300/75 mono mt-0.5">
+                  <span>= (FSM / (W − w)) × (1 / n²)</span>
+                  <span id="rawG1Gv" class="text-slate-400">(0.10052)</span>
+                </div>
+              </div>
+
+              <div class="p-2.5 rounded-lg bg-emerald-950/85 border border-emerald-400/50">
+                <div class="flex justify-between items-baseline">
+                  <span class="font-extrabold text-emerald-200">新 GM</span>
+                  <span id="outNewGM" class="text-base font-extrabold text-emerald-300 mono">0.641 m</span>
+                </div>
+                <div class="flex justify-between text-[11px] text-emerald-300/80 mono mt-0.5">
+                  <span>= 原 GM − GG₁ − G₁Gv</span>
+                  <span id="rawNewGM" class="text-slate-400">(0.64140)</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 三、最終答案（藍色底） -->
+        <div class="lg:col-span-3 rounded-xl excel-blue p-4 flex flex-col justify-between">
+          <div class="space-y-3">
+            <div class="flex items-center justify-between pb-2.5 border-b border-sky-400/30">
+              <h3 class="text-sm font-extrabold text-sky-300 tracking-wide">三、最終答案（藍色底）</h3>
+              <span class="text-[11px] px-2 py-0.5 rounded bg-sky-400/20 text-sky-200">Excel 進位</span>
+            </div>
+
+            <div class="p-3 rounded-xl bg-slate-950/70 border border-sky-400/35">
+              <div class="text-xs text-sky-300 font-semibold">橫傾角正切值 tan θ</div>
+              <div id="outTanTheta" class="text-xl font-extrabold text-white mono mt-1">0.06240</div>
+              <div class="text-[11px] text-sky-300/85 mono mt-1 leading-relaxed">
+                = ROUND(G₂Gv, 3) / ROUND(新 GM, 3)<br />
+                <span id="outTanFormulaDetail" class="text-amber-300">= 0.040 / 0.641</span>
+              </div>
+            </div>
+
+            <div class="p-4 rounded-xl bg-gradient-to-br from-sky-950/90 to-slate-950/90 border-2 border-sky-400/60 shadow-lg">
+              <div class="text-xs text-sky-200 font-bold">船舶橫傾角 θ</div>
+              <div class="flex items-baseline gap-2 mt-1">
+                <span id="outThetaDeg" class="text-3xl font-black text-sky-300 mono">3.57°</span>
+                <span id="outThetaDir" class="text-sm font-extrabold px-2 py-0.5 rounded bg-amber-400/20 text-amber-300">左傾</span>
+              </div>
+              <div class="text-[11px] text-slate-300 mono mt-2">
+                = DEGREES(ATAN(tan θ))
+              </div>
+              <div id="outUnroundedNote" class="text-[11px] text-slate-400 mt-1">
+                未進位參考值：3.59°
+              </div>
+            </div>
+
+            <div id="excelAlarmBox" class="p-3.5 rounded-xl bg-emerald-950/70 border border-emerald-400/45">
+              <div class="text-[11px] text-slate-300 font-semibold mb-1">安全警報判定</div>
+              <div id="excelAlarmStatus" class="text-sm font-extrabold text-emerald-300">
+                正常：未達5°
+              </div>
+              <div class="text-[10px] text-slate-400 mt-1 leading-relaxed">
+                • &gt; 15°：紅色警報（超過15°）<br />
+                • 5° ~ 15°：黃色警報（5°至15°）<br />
+                • &lt; 5°：正常（未達5°）
+              </div>
+            </div>
+          </div>
+
+          <div class="mt-4 pt-3 border-t border-sky-400/25 text-[11px] text-sky-200/85">
+            <strong>橫傾方向判讀：</strong><br />
+            <span id="heelLogicExplain">右舷艙間泵出壓載水，右側變輕，船體向左舷傾斜（左傾）。</span>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- 4. 各壓載水艙即時滑桿微調與一鍵按鈕 -->
+    <section class="rounded-2xl bg-[#0b222d]/95 border border-sky-400/25 p-4 sm:p-6 shadow-xl">
+      <div class="flex flex-wrap items-center justify-between gap-2 mb-4">
+        <div>
+          <div class="flex items-center gap-2">
+            <span class="px-2.5 py-0.5 rounded-md bg-sky-400/20 border border-sky-400/40 text-sky-300 text-xs font-bold mono">SECTION 02</span>
+            <h2 class="text-base sm:text-lg font-bold text-white">各壓載水艙即時拉桿與一鍵比例控制</h2>
+          </div>
+          <p class="text-xs text-slate-400 mt-1">
+            手動拖動任一水艙滑桿或點擊一鍵比例按鈕，上方船體傾斜角度與 Excel 三色計算表將同步即時更新。
+          </p>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-1.5 text-xs">
+          <span class="text-slate-400">分艙模式：</span>
+          <button type="button" onclick="setCompartmentCount(1)" id="btnComp1" class="px-2.5 py-1 rounded-lg bg-slate-800 border border-slate-600 text-slate-200">1 艙</button>
+          <button type="button" onclick="setCompartmentCount(2)" id="btnComp2" class="px-2.5 py-1 rounded-lg bg-sky-500/30 border border-sky-400 text-sky-200 font-bold">2 艙</button>
+          <button type="button" onclick="setCompartmentCount(4)" id="btnComp4" class="px-2.5 py-1 rounded-lg bg-slate-800 border border-slate-600 text-slate-200">4 艙 (左2/左1/右1/右2)</button>
+          <button type="button" onclick="setCompartmentCount(6)" id="btnComp6" class="px-2.5 py-1 rounded-lg bg-slate-800 border border-slate-600 text-slate-200">6 艙</button>
+        </div>
+      </div>
+
+      <div id="tanksGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3"></div>
+    </section>
+
+  </main>
+
+  <script>
+    // =========================================================================
+    // 1. 全域狀態管理（完全同步《移動貨物對船舶重心影響計算表.xlsx》）
+    // =========================================================================
+    const state = {
+      liquidName: '海水',
+      density: 1.025,
+      dispInitial: 10000,
+      km: 8.2,
+      kg: 7.4,
+      tankLength: 16,
+      totalBreadth: 18,
+      tankDepth: 1.2,
+      bulkheads: 1,
+      tankCount: 2,
+
+      // Excel 黃色輸入變動值
+      W: 10000,
+      KM: 8.2,
+      KG: 7.4,
+      w: 88.56,
+      dv: 6.5,
+      dh: 4.5,
+      L: 16,
+      B_fsm: 9,
+      d1: 1.025,
+      n: 1,
+
+      // 橫傾方向 (-1: 左傾 Port, +1: 右傾 Starboard, 0: 正浮)
+      heelSign: -1,
+
+      // 各分艙資料
+      tanks: [],
+
+      // 計算快取
+      calc: {
+        origGM: 0.8,
+        GG1: 0.058078,
+        G2Gv: 0.040208,
+        i: 972,
+        FSM: 996.3,
+        G1Gv: 0.10052,
+        newGM: 0.641402,
+        G2GvRounded: 0.040,
+        newGMRounded: 0.641,
+        tanTheta: 0.062402,
+        thetaDeg: 3.57,
+        thetaUnroundedDeg: 3.59,
+        W_final: 9911.44,
+        alarmLevel: 'normal'
+      },
+
+      // 圖層開關
+      layers: {
+        showG: true,
+        showM: true,
+        showFSM: true
+      },
+
+      // 動畫與音效
+      visualAngleDeg: -3.57,
+      wavePhase: 0,
+      audioEnabled: true,
+      lastAlarmSpoken: 'normal'
+    };
+
+    // =========================================================================
+    // 2. 分艙結構建立與中文/數字智慧解析
+    // =========================================================================
+    function buildTanks(count, totalBreadth, targetIndex = -1, targetFill = 0.5) {
+      const tanks = [];
+      const singleWidth = totalBreadth / count;
+
+      for (let idx = 0; idx < count; idx++) {
+        // 由左舷 (Port, 負座標) 到 右舷 (Starboard, 正座標) 排列
+        const tcg = -totalBreadth / 2 + singleWidth * (idx + 0.5);
+        let name = '';
+        let shortCode = '';
+        let side = 'center';
+
+        if (count === 1) {
+          name = '中央全寬艙 (C1)';
+          shortCode = 'C1';
+          side = 'center';
+        } else if (count === 2) {
+          if (idx === 0) {
+            name = '左舷艙間 (1P)';
+            shortCode = '左1';
+            side = 'port';
+          } else {
+            name = '右舷艙間 (1S)';
+            shortCode = '右1';
+            side = 'starboard';
+          }
+        } else {
+          // 4艙 (左2, 左1, 右1, 右2) 或 6艙 (左3, 左2, 左1, 右1, 右2, 右3)
+          const half = count / 2;
+          if (idx < half) {
+            const num = half - idx;
+            name = `左${num}艙 (${num}P)`;
+            shortCode = `左${num}`;
+            side = 'port';
+          } else {
+            const num = idx - half + 1;
+            name = `右${num}艙 (${num}S)`;
+            shortCode = `右${num}`;
+            side = 'starboard';
+          }
+        }
+
+        const isTarget = idx === targetIndex;
+        tanks.push({
+          id: idx,
+          name,
+          shortCode,
+          side,
+          width: singleWidth,
+          tcg,
+          fillPct: isTarget ? targetFill : 1.0,
+          isTarget
+        });
+      }
+      return tanks;
+    }
+
+    // 解析指定單一艙間（如「左2」、「2P」、「右1」、「3S」、「右舷艙間」）
+    function parseTargetTank(rawText, currentCount) {
+      const txt = (rawText || '').trim().toUpperCase();
+      let desiredCount = currentCount;
+      let targetIdx = -1;
+
+      const portNumMatch = txt.match(/左\s*(\d)|(\d)\s*P/);
+      const stbdNumMatch = txt.match(/右\s*(\d)|(\d)\s*S/);
+
+      if (portNumMatch) {
+        const n = parseInt(portNumMatch[1] || portNumMatch[2], 10);
+        if (n >= 2 && desiredCount < n * 2) {
+          desiredCount = Math.min(6, n * 2);
+        }
+        const half = desiredCount / 2;
+        targetIdx = Math.max(0, half - n);
+      } else if (stbdNumMatch) {
+        const n = parseInt(stbdNumMatch[1] || stbdNumMatch[2], 10);
+        if (n >= 2 && desiredCount < n * 2) {
+          desiredCount = Math.min(6, n * 2);
+        }
+        const half = desiredCount / 2;
+        targetIdx = Math.min(desiredCount - 1, half + n - 1);
+      } else if (txt.includes('左') || txt.includes('PORT') || txt.includes('P')) {
+        if (desiredCount === 1) desiredCount = 2;
+        targetIdx = 0; // 左舷最外側艙間
+      } else if (txt.includes('右') || txt.includes('STBD') || txt.includes('STARBOARD') || txt.includes('S')) {
+        if (desiredCount === 1) desiredCount = 2;
+        targetIdx = desiredCount - 1; // 右舷最外側艙間
+      } else {
+        targetIdx = desiredCount - 1;
+      }
+
+      return { desiredCount, targetIdx };
+    }
+
+    // 解析泵出比例（支援「一半」、「全部」、「四分之一」、「50%」、「88.56噸」）
+    function parsePumpAmount(rawText, singleFullWeight) {
+      const txt = (rawText || '').trim();
+      if (txt.includes('一半') || txt.includes('半')) {
+        return { ratio: 0.5, weight: singleFullWeight * 0.5 };
+      }
+      if (txt.includes('四分之一') || txt.includes('1/4')) {
+        return { ratio: 0.25, weight: singleFullWeight * 0.25 };
+      }
+      if (txt.includes('四分之三') || txt.includes('3/4')) {
+        return { ratio: 0.75, weight: singleFullWeight * 0.75 };
+      }
+      if (txt.includes('全部') || txt.includes('全空') || txt.includes('全滿')) {
+        return { ratio: 1.0, weight: singleFullWeight };
+      }
+      if (txt.includes('噸') || txt.toUpperCase().includes('T')) {
+        const tonVal = parseFloat(txt.replace(/[^\d.]/g, ''));
+        if (!isNaN(tonVal) && singleFullWeight > 0) {
+          const clampedW = Math.max(0, Math.min(singleFullWeight, tonVal));
+          return { ratio: clampedW / singleFullWeight, weight: clampedW };
+        }
+      }
+      if (txt.includes('%')) {
+        const pctVal = parseFloat(txt.replace('%', ''));
+        if (!isNaN(pctVal)) {
+          const r = Math.max(0, Math.min(1, pctVal / 100));
+          return { ratio: r, weight: singleFullWeight * r };
+        }
+      }
+      if (txt.includes('/')) {
+        const parts = txt.split('/');
+        const a = parseFloat(parts[0]);
+        const b = parseFloat(parts[1]);
+        if (!isNaN(a) && !isNaN(b) && b !== 0) {
+          const r = Math.max(0, Math.min(1, a / b));
+          return { ratio: r, weight: singleFullWeight * r };
+        }
+      }
+      const num = parseFloat(txt);
+      if (!isNaN(num)) {
+        const r = num > 1 ? Math.min(1, num / 100) : Math.max(0, num);
+        return { ratio: r, weight: singleFullWeight * r };
+      }
+      return { ratio: 0.5, weight: singleFullWeight * 0.5 };
+    }
+
+    // =========================================================================
+    // 3. Excel 公式核心計算引擎（100% 遵循進位規範）
+    // =========================================================================
+    function roundExcel(num, digits) {
+      const factor = Math.pow(10, digits);
+      return Math.round((num + Number.EPSILON) * factor) / factor;
+    }
+
+    function runExcelCalculation() {
+      const W = Math.max(1, Number(state.W) || 10000);
+      const KM = Number(state.KM) || 0;
+      const KG = Number(state.KG) || 0;
+      const w = Math.max(0, Number(state.w) || 0);
+      const dv = Number(state.dv) || 0;
+      const dh = Number(state.dh) || 0;
+      const L = Math.max(0, Number(state.L) || 0);
+      const B = Math.max(0, Number(state.B_fsm) || 0);
+      const d1 = Math.max(0, Number(state.d1) || 0);
+      const n = Math.max(1, Number(state.n) || 1);
+
+      // 剩餘排水量 (W - w)
+      const W_final = Math.max(1, W - w);
+
+      // 二、自動計算（綠色底）
+      const origGM = KM - KG;
+      const GG1 = (w * dv) / W_final;
+      const G2Gv = (w * dh) / W_final;
+      const i = (L * Math.pow(B, 3)) / 12;
+      const FSM = i * d1;
+      const G1Gv = (FSM / W_final) * (1 / Math.pow(n, 2));
+      const newGM = origGM - GG1 - G1Gv;
+
+      // 三、最終答案（藍色底）：嚴格採用 ROUND(G₂Gv, 3) / ROUND(新 GM, 3)
+      const G2GvRounded = roundExcel(G2Gv, 3);
+      const newGMRounded = roundExcel(newGM, 3);
+
+      let tanTheta = 0;
+      let thetaDeg = 0;
+      let thetaUnroundedDeg = 0;
+
+      if (newGMRounded > 0.0001) {
+        tanTheta = G2GvRounded / newGMRounded;
+        thetaDeg = (Math.atan(tanTheta) * 180) / Math.PI;
+        thetaUnroundedDeg = (Math.atan(G2Gv / newGM) * 180) / Math.PI;
+      } else {
+        tanTheta = Infinity;
+        thetaDeg = 45.0;
+        thetaUnroundedDeg = 45.0;
+      }
+
+      // 安全警報判定 (>15° 紅色, 5°~15° 黃色, <5° 正常)
+      const absAngle = Math.abs(thetaDeg);
+      let alarmLevel = 'normal';
+      if (newGMRounded <= 0 || absAngle > 15) {
+        alarmLevel = 'danger';
+      } else if (absAngle >= 5) {
+        alarmLevel = 'warning';
+      }
+
+      state.calc = {
+        origGM,
+        GG1,
+        G2Gv,
+        i,
+        FSM,
+        G1Gv,
+        newGM,
+        G2GvRounded,
+        newGMRounded,
+        tanTheta,
+        thetaDeg,
+        thetaUnroundedDeg,
+        W_final,
+        alarmLevel
+      };
+
+      updateUI();
+      checkAlarmSound(alarmLevel);
+    }
+
+    // =========================================================================
+    // 4. 題目欄、Excel 黃色欄位與水艙滑桿雙向連動
+    // =========================================================================
+    function syncFromProblem(changedField) {
+      state.liquidName = document.getElementById('qLiquidName').value || '海水';
+      state.density = parseFloat(document.getElementById('qDensity').value) || 1.025;
+      state.dispInitial = parseFloat(document.getElementById('qDisp').value) || 10000;
+      state.km = parseFloat(document.getElementById('qKm').value) || 8.2;
+      state.kg = parseFloat(document.getElementById('qKg').value) || 7.4;
+      state.tankLength = parseFloat(document.getElementById('qLength').value) || 16;
+      state.totalBreadth = parseFloat(document.getElementById('qBreadth').value) || 18;
+      state.tankDepth = parseFloat(document.getElementById('qDepth').value) || 1.2;
+
+      let bulkheads = parseInt(document.getElementById('qBulkheads').value, 10);
+      let tankCount = parseInt(document.getElementById('qTankCount').value, 10);
+
+      if (changedField === 'bulkheads' && !isNaN(bulkheads)) {
+        tankCount = Math.max(1, bulkheads + 1);
+        document.getElementById('qTankCount').value = tankCount;
+      } else if (changedField === 'tankCount' && !isNaN(tankCount)) {
+        bulkheads = Math.max(0, tankCount - 1);
+        document.getElementById('qBulkheads').value = bulkheads;
+      }
+
+      const targetRaw = document.getElementById('qTargetTank').value;
+      const fracRaw = document.getElementById('qFraction').value;
+
+      // 解析指定單一艙間（例如「左2」自動切換為 4 艙並僅鎖定左2）
+      const parsedTank = parseTargetTank(targetRaw, tankCount || 2);
+      if (parsedTank.desiredCount !== tankCount) {
+        tankCount = parsedTank.desiredCount;
+        bulkheads = tankCount - 1;
+        document.getElementById('qTankCount').value = tankCount;
+        document.getElementById('qBulkheads').value = bulkheads;
+      }
+
+      state.bulkheads = bulkheads;
+      state.tankCount = tankCount;
+
+      const singleWidth = state.totalBreadth / tankCount;
+      const singleFullWeight = state.tankLength * singleWidth * state.tankDepth * state.density;
+      const pumpInfo = parsePumpAmount(fracRaw, singleFullWeight);
+
+      // 僅對目標艙扣除水量，其餘所有艙間維持 100% 滿載
+      const targetFill = Math.max(0, 1 - pumpInfo.ratio);
+      state.tanks = buildTanks(tankCount, state.totalBreadth, parsedTank.targetIdx, targetFill);
+      const targetTank = state.tanks[parsedTank.targetIdx] || state.tanks[0];
+
+      // 計算垂直移動距離 dv = |KG - kg_water|（預設題目精確為 6.5m，若修改 KG 或深則自動重算）
+      let dvVal = 6.5;
+      if (Math.abs(state.kg - 7.4) > 0.001 || Math.abs(state.tankDepth - 1.2) > 0.001) {
+        const remainingWaterKg = targetFill > 0 ? (state.tankDepth * targetFill) * 0.5 : state.tankDepth * 0.5;
+        dvVal = Math.abs(state.kg - remainingWaterKg);
+      }
+
+      const dhVal = targetTank ? Math.abs(targetTank.tcg) : singleWidth / 2;
+
+      // 泵出右側 -> 左傾 (-1)；泵出左側 -> 右傾 (+1)
+      if (targetTank) {
+        if (targetTank.tcg > 0.001) {
+          state.heelSign = -1;
+        } else if (targetTank.tcg < -0.001) {
+          state.heelSign = 1;
+        } else {
+          state.heelSign = 0;
+        }
+      }
+
+      // 自由液面寬度與分隔數：單艙寬度 B = totalBreadth / tankCount 且 n = 1
+      const hasSlack = targetFill > 0.001 && targetFill < 0.999;
+      const fsmB = hasSlack ? singleWidth : 0;
+
+      // 同步寫入 Excel 黃色輸入欄位
+      state.W = state.dispInitial;
+      state.KM = state.km;
+      state.KG = state.kg;
+      state.w = roundExcel(pumpInfo.weight, 2);
+      state.dv = roundExcel(dvVal, 3);
+      state.dh = roundExcel(dhVal, 3);
+      state.L = state.tankLength;
+      state.B_fsm = roundExcel(fsmB, 3);
+      state.d1 = state.density;
+      state.n = 1;
+
+      syncExcelInputsToDOM();
+      renderTankCards();
+      runExcelCalculation();
+
+      // 更新「📌 題意解析」狀態列
+      const remainPct = Math.round(targetFill * 100);
+      const parseEl = document.getElementById('problemParseStatus');
+      if (parseEl && targetTank) {
+        parseEl.innerHTML = `📌 <strong>題意解析：</strong>鎖定 <span class="text-yellow-300 font-bold">${targetTank.name}</span>，泵出 <span class="text-yellow-300 font-bold">${state.w.toFixed(2)} 噸</span>（剩餘 ${remainPct}%），水平力臂 <span class="mono text-sky-300">dh = ${state.dh.toFixed(2)} m</span>，垂直力臂 <span class="mono text-sky-300">dv = ${state.dv.toFixed(2)} m</span>（其餘 ${tankCount - 1} 個艙間維持 100% 滿載）。`;
+      }
+    }
+
+    function onExcelInput() {
+      state.W = parseFloat(document.getElementById('inW').value) || 0;
+      state.KM = parseFloat(document.getElementById('inKM').value) || 0;
+      state.KG = parseFloat(document.getElementById('inKG').value) || 0;
+      state.w = parseFloat(document.getElementById('inw').value) || 0;
+      state.dv = parseFloat(document.getElementById('indv').value) || 0;
+      state.dh = parseFloat(document.getElementById('indh').value) || 0;
+      state.L = parseFloat(document.getElementById('inL').value) || 0;
+      state.B_fsm = parseFloat(document.getElementById('inB').value) || 0;
+      state.d1 = parseFloat(document.getElementById('ind1').value) || 0;
+      state.n = Math.max(1, parseFloat(document.getElementById('inn').value) || 1);
+
+      runExcelCalculation();
+    }
+
+    function syncExcelInputsToDOM() {
+      document.getElementById('inW').value = state.W;
+      document.getElementById('inKM').value = state.KM;
+      document.getElementById('inKG').value = state.KG;
+      document.getElementById('inw').value = state.w;
+      document.getElementById('indv').value = state.dv;
+      document.getElementById('indh').value = state.dh;
+      document.getElementById('inL').value = state.L;
+      document.getElementById('inB').value = state.B_fsm;
+      document.getElementById('ind1').value = state.d1;
+      document.getElementById('inn').value = state.n;
+    }
+
+    function setCompartmentCount(count) {
+      document.getElementById('qTankCount').value = count;
+      document.getElementById('qBulkheads').value = Math.max(0, count - 1);
+      syncFromProblem('tankCount');
+    }
+
+    function applyPreset(presetName) {
+      if (presetName === 'excelDefault') {
+        document.getElementById('qLiquidName').value = '海水';
+        document.getElementById('qDensity').value = 1.025;
+        document.getElementById('qDisp').value = 10000;
+        document.getElementById('qKm').value = 8.2;
+        document.getElementById('qKg').value = 7.4;
+        document.getElementById('qLength').value = 16;
+        document.getElementById('qBreadth').value = 18;
+        document.getElementById('qDepth').value = 1.2;
+        document.getElementById('qBulkheads').value = 1;
+        document.getElementById('qTankCount').value = 2;
+        document.getElementById('qTargetTank').value = '右舷艙間';
+        document.getElementById('qFraction').value = '一半';
+        syncFromProblem('preset');
+      } else if (presetName === 'port2of4') {
+        document.getElementById('qLiquidName').value = '海水';
+        document.getElementById('qDensity').value = 1.025;
+        document.getElementById('qDisp').value = 10000;
+        document.getElementById('qKm').value = 8.2;
+        document.getElementById('qKg').value = 7.4;
+        document.getElementById('qLength').value = 16;
+        document.getElementById('qBreadth').value = 18;
+        document.getElementById('qDepth').value = 1.2;
+        document.getElementById('qBulkheads').value = 3;
+        document.getElementById('qTankCount').value = 4;
+        document.getElementById('qTargetTank').value = '左2';
+        document.getElementById('qFraction').value = '一半';
+        syncFromProblem('preset');
+      } else if (presetName === 'singleSlack') {
+        document.getElementById('qLiquidName').value = '海水';
+        document.getElementById('qDensity').value = 1.025;
+        document.getElementById('qDisp').value = 10000;
+        document.getElementById('qKm').value = 8.2;
+        document.getElementById('qKg').value = 7.4;
+        document.getElementById('qLength').value = 16;
+        document.getElementById('qBreadth').value = 18;
+        document.getElementById('qDepth').value = 1.2;
+        document.getElementById('qBulkheads').value = 0;
+        document.getElementById('qTankCount').value = 1;
+        document.getElementById('qTargetTank').value = '中央全寬艙';
+        document.getElementById('qFraction').value = '一半';
+        syncFromProblem('preset');
+      }
+    }
+
+    function resetToDefault() {
+      applyPreset('excelDefault');
+    }
+
+    function toggleLayer(layerKey) {
+      state.layers[layerKey] = !state.layers[layerKey];
+      const map = {
+        showG: { id: 'btnLayerG', label: 'G/Gv點', activeClass: 'px-2 py-1 rounded-md text-[11px] font-bold bg-sky-500/30 border border-sky-400/60 text-sky-100 backdrop-blur-sm transition' },
+        showM: { id: 'btnLayerM', label: 'M點', activeClass: 'px-2 py-1 rounded-md text-[11px] font-bold bg-emerald-500/30 border border-emerald-400/60 text-emerald-100 backdrop-blur-sm transition' },
+        showFSM: { id: 'btnLayerFSM', label: '自由液面線', activeClass: 'px-2 py-1 rounded-md text-[11px] font-bold bg-amber-500/30 border border-amber-400/60 text-amber-100 backdrop-blur-sm transition' }
+      };
+      const item = map[layerKey];
+      const btn = document.getElementById(item.id);
+      if (state.layers[layerKey]) {
+        btn.className = item.activeClass;
+        btn.textContent = `✓ ${item.label}`;
+      } else {
+        btn.className = 'px-2 py-1 rounded-md text-[11px] font-semibold bg-slate-900/75 border border-slate-600/60 text-slate-400 backdrop-blur-sm transition';
+        btn.textContent = item.label;
+      }
+    }
+
+    // =========================================================================
+    // 5. 各壓載水艙即時滑桿互動（Section 02）
+    // =========================================================================
+    function renderTankCards() {
+      const grid = document.getElementById('tanksGrid');
+      grid.innerHTML = '';
+
+      [1, 2, 4, 6].forEach(c => {
+        const btn = document.getElementById(`btnComp${c}`);
+        if (!btn) return;
+        btn.className = state.tanks.length === c
+          ? 'px-2.5 py-1 rounded-lg bg-sky-500/30 border border-sky-400 text-sky-200 font-bold'
+          : 'px-2.5 py-1 rounded-lg bg-slate-800 border border-slate-600 text-slate-200 hover:bg-slate-700';
+      });
+
+      const singleFullWeight = state.tankLength * (state.totalBreadth / state.tanks.length) * state.tankDepth * state.density;
+
+      state.tanks.forEach((tank, idx) => {
+        const isSlack = tank.fillPct > 0.001 && tank.fillPct < 0.999;
+        const currentTon = singleFullWeight * tank.fillPct;
+        const pctDisplay = Math.round(tank.fillPct * 100);
+
+        const card = document.createElement('div');
+        card.className = `rounded-xl p-3.5 border transition ${
+          tank.isTarget
+            ? 'bg-amber-950/40 border-amber-400/75 shadow-lg'
+            : 'bg-slate-900/75 border-slate-700/75'
+        }`;
+
+        card.innerHTML = `
+          <div class="flex items-center justify-between mb-1.5">
+            <div class="flex items-center gap-1.5">
+              <span class="px-2 py-0.5 rounded text-xs font-extrabold mono ${
+                tank.side === 'port'
+                  ? 'bg-rose-500/20 text-rose-300 border border-rose-400/35'
+                  : tank.side === 'starboard'
+                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-400/35'
+                  : 'bg-sky-500/20 text-sky-300 border border-sky-400/35'
+              }">${tank.shortCode}</span>
+              <span class="text-xs font-bold text-white">${tank.name}</span>
+            </div>
+            ${
+              isSlack
+                ? '<span class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-yellow-400/20 text-yellow-300 border border-yellow-400/40">自由液面</span>'
+                : pctDisplay === 100
+                ? '<span class="text-[10px] px-1.5 py-0.5 rounded bg-sky-500/20 text-sky-300">滿艙</span>'
+                : '<span class="text-[10px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-300">空艙</span>'
+            }
+          </div>
+
+          <div class="flex justify-between text-[11px] text-slate-400 mono mb-2">
+            <span>力臂: ${tank.tcg >= 0 ? '+' : ''}${tank.tcg.toFixed(2)} m</span>
+            <span class="text-sky-200 font-bold">${currentTon.toFixed(2)} t (${pctDisplay}%)</span>
+          </div>
+
+          <input type="range" min="0" max="100" step="1" value="${pctDisplay}"
+            class="tank-slider ${isSlack ? 'slack' : ''}"
+            oninput="onTankSliderChange(${idx}, this.value)" />
+
+          <div class="grid grid-cols-3 gap-1.5 mt-2.5 text-[11px]">
+            <button type="button" onclick="onTankSliderChange(${idx}, 0)"
+              class="py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-600/60">空艙 0%</button>
+            <button type="button" onclick="onTankSliderChange(${idx}, 50)"
+              class="py-1 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 border border-amber-400/40 font-semibold">半滿 50%</button>
+            <button type="button" onclick="onTankSliderChange(${idx}, 100)"
+              class="py-1 rounded bg-sky-500/20 hover:bg-sky-500/30 text-sky-200 border border-sky-400/40">打滿 100%</button>
+          </div>
+        `;
+        grid.appendChild(card);
+      });
+    }
+
+    function onTankSliderChange(tankIdx, pctVal) {
+      const pct = Math.max(0, Math.min(100, Number(pctVal))) / 100;
+      state.tanks.forEach((t, i) => {
+        t.isTarget = i === tankIdx;
+      });
+      state.tanks[tankIdx].fillPct = pct;
+
+      const singleWidth = state.totalBreadth / state.tanks.length;
+      const singleFullWeight = state.tankLength * singleWidth * state.tankDepth * state.density;
+
+      let totalRemovedWeight = 0;
+      let netTransverseMoment = 0;
+      let slackTanksCount = 0;
+
+      state.tanks.forEach(t => {
+        const deltaWeight = (t.fillPct - 1.0) * singleFullWeight;
+        totalRemovedWeight += Math.abs(deltaWeight);
+        netTransverseMoment += deltaWeight * t.tcg;
+        if (t.fillPct > 0.001 && t.fillPct < 0.999) {
+          slackTanksCount++;
+        }
+      });
+
+      state.w = roundExcel(totalRemovedWeight, 2);
+      state.dh = totalRemovedWeight > 0.0001 ? roundExcel(Math.abs(netTransverseMoment) / totalRemovedWeight, 3) : 0;
+      state.heelSign = Math.abs(netTransverseMoment) < 0.001 ? 0 : (netTransverseMoment > 0 ? 1 : -1);
+      state.B_fsm = slackTanksCount > 0 ? roundExcel(singleWidth * Math.cbrt(slackTanksCount), 3) : 0;
+      state.n = 1;
+
+      syncExcelInputsToDOM();
+      renderTankCards();
+      runExcelCalculation();
+    }
+
+    // =========================================================================
+    // 6. 更新所有 UI 數值與警報燈號
+    // =========================================================================
+    function updateUI() {
+      const c = state.calc;
+      const absAngle = Math.abs(c.thetaDeg);
+
+      let dirWord = '正浮 (Even)';
+      let shortDir = '正浮';
+      if (absAngle >= 0.005 && state.heelSign !== 0) {
+        dirWord = state.heelSign < 0 ? `左傾 ${absAngle.toFixed(2)}° (Port)` : `右傾 ${absAngle.toFixed(2)}° (Stbd)`;
+        shortDir = state.heelSign < 0 ? '左傾' : '右傾';
+      }
+
+      document.getElementById('hudHeelDirection').textContent = dirWord;
+      document.getElementById('pillAngle').textContent = `${absAngle.toFixed(2)}°`;
+      document.getElementById('pillDirTag').textContent = shortDir;
+      document.getElementById('pillDisp').innerHTML = `${c.W_final.toFixed(2)} <span class="text-xs font-normal text-slate-400">t</span>`;
+      document.getElementById('pillWeightDiff').textContent = `−${Number(state.w).toFixed(2)}t`;
+      document.getElementById('pillFsmLoss').innerHTML = `${c.G1Gv.toFixed(3)} <span class="text-xs font-normal text-emerald-400/70">m</span>`;
+      document.getElementById('pillFsmVal').textContent = `FSM ${c.FSM.toFixed(1)}`;
+      document.getElementById('pillNewGm').innerHTML = `${c.newGMRounded.toFixed(3)} <span class="text-xs font-normal text-amber-300/70">m</span>`;
+      document.getElementById('pillOrigGm').textContent = `原 ${c.origGM.toFixed(3)}m`;
+
+      // 綠色自動計算欄位
+      document.getElementById('outOrigGM').textContent = `${c.origGM.toFixed(3)} m`;
+      document.getElementById('outGG1').textContent = `${c.GG1.toFixed(3)} m`;
+      document.getElementById('rawGG1').textContent = `(${c.GG1.toFixed(5)})`;
+
+      document.getElementById('outG2Gv').textContent = `${c.G2Gv.toFixed(3)} m`;
+      document.getElementById('rawG2Gv').textContent = `(${c.G2Gv.toFixed(5)})`;
+
+      document.getElementById('outI').textContent = `${c.i.toFixed(2)} m⁴`;
+      document.getElementById('outFSM').textContent = `${c.FSM.toFixed(2)} t·m`;
+
+      document.getElementById('outG1Gv').textContent = `${c.G1Gv.toFixed(3)} m`;
+      document.getElementById('rawG1Gv').textContent = `(${c.G1Gv.toFixed(5)})`;
+
+      document.getElementById('outNewGM').textContent = `${c.newGMRounded.toFixed(3)} m`;
+      document.getElementById('rawNewGM').textContent = `(${c.newGM.toFixed(5)})`;
+
+      // 藍色最終答案欄位
+      document.getElementById('outTanTheta').textContent = isFinite(c.tanTheta) ? c.tanTheta.toFixed(5) : '∞ (不穩定)';
+      document.getElementById('outTanFormulaDetail').textContent = `= ${c.G2GvRounded.toFixed(3)} / ${c.newGMRounded.toFixed(3)}`;
+      document.getElementById('outThetaDeg').textContent = `${absAngle.toFixed(2)}°`;
+      document.getElementById('outThetaDir').textContent = shortDir;
+      document.getElementById('outUnroundedNote').textContent = `未進位參考值：${Math.abs(c.thetaUnroundedDeg).toFixed(2)}°`;
+
+      const explainEl = document.getElementById('heelLogicExplain');
+      if (state.heelSign < 0) {
+        explainEl.textContent = '右舷艙間泵出壓載水，右側變輕，重心 G 向左移動，船體向左舷傾斜（左傾）。';
+      } else if (state.heelSign > 0) {
+        explainEl.textContent = '左舷艙間泵出壓載水，左側變輕，重心 G 向右移動，船體向右舷傾斜（右傾）。';
+      } else {
+        explainEl.textContent = '左右兩舷力矩平衡，船體維持正浮狀態（0.00°）。';
+      }
+
+      // 三段式安全警報燈號
+      const badge = document.getElementById('alarmBadge');
+      const dot = document.getElementById('alarmDot');
+      const text = document.getElementById('alarmText');
+      const box = document.getElementById('excelAlarmBox');
+      const boxStatus = document.getElementById('excelAlarmStatus');
+
+      if (c.alarmLevel === 'danger') {
+        badge.className = 'px-2.5 py-1 rounded-full text-xs font-bold border flex items-center gap-1.5 bg-red-500/25 border-red-400 text-red-200 alarm-danger';
+        dot.className = 'w-2 h-2 rounded-full bg-red-400';
+        const msg = c.newGMRounded <= 0 ? '紅色警報：GM ≤ 0 負穩度' : '紅色警報：超過15°';
+        text.textContent = msg;
+        box.className = 'p-3.5 rounded-xl bg-red-950/80 border border-red-400/70';
+        boxStatus.className = 'text-sm font-extrabold text-red-300';
+        boxStatus.textContent = msg;
+      } else if (c.alarmLevel === 'warning') {
+        badge.className = 'px-2.5 py-1 rounded-full text-xs font-bold border flex items-center gap-1.5 bg-amber-500/25 border-amber-400 text-amber-200';
+        dot.className = 'w-2 h-2 rounded-full bg-amber-400';
+        text.textContent = '黃色警報：5°至15°';
+        box.className = 'p-3.5 rounded-xl bg-amber-950/75 border border-amber-400/65';
+        boxStatus.className = 'text-sm font-extrabold text-amber-300';
+        boxStatus.textContent = '黃色警報：5°至15°';
+      } else {
+        badge.className = 'px-2.5 py-1 rounded-full text-xs font-bold border flex items-center gap-1.5 bg-emerald-500/15 border-emerald-400/40 text-emerald-300';
+        dot.className = 'w-2 h-2 rounded-full bg-emerald-400';
+        text.textContent = '正常：未達5°';
+        box.className = 'p-3.5 rounded-xl bg-emerald-950/70 border border-emerald-400/45';
+        boxStatus.className = 'text-sm font-extrabold text-emerald-300';
+        boxStatus.textContent = '正常：未達5°';
+      }
+    }
+
+    // =========================================================================
+    // 7. Web Audio API 安全警報音
+    // =========================================================================
+    let audioCtx = null;
+
+    function toggleAudio() {
+      state.audioEnabled = !state.audioEnabled;
+      const btn = document.getElementById('audioToggleBtn');
+      btn.textContent = state.audioEnabled ? '🔊 警報音：開' : '🔇 警報音：關';
+    }
+
+    function playBeep(freq = 660, duration = 0.14) {
+      if (!state.audioEnabled) return;
+      try {
+        if (!audioCtx) {
+          audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        if (audioCtx.state === 'suspended') {
+          audioCtx.resume();
+        }
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+        gain.gain.setValueAtTime(0.08, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start();
+        osc.stop(audioCtx.currentTime + duration);
+      } catch (e) {}
+    }
+
+    function checkAlarmSound(level) {
+      if (level !== state.lastAlarmSpoken) {
+        state.lastAlarmSpoken = level;
+        if (level === 'warning') playBeep(587.33, 0.16);
+        else if (level === 'danger') playBeep(880, 0.25);
+      }
+    }
+
+    // =========================================================================
+    // 8. 船體橫剖面 Canvas 繪圖引擎（雙重防呆確保寬高永遠 > 0，船體絕不消失）
+    // =========================================================================
+    const canvas = document.getElementById('shipCanvas');
+    const ctx = canvas.getContext('2d');
+    const canvasContainer = document.getElementById('canvasContainer');
+
+    let canvasCssW = 640;
+    let canvasCssH = 260;
+
+    function syncCanvasDimensions() {
+      if (!canvasContainer || !canvas) return;
+      const rect = canvasContainer.getBoundingClientRect();
+      // 防呆：若容器尚未完成排版導致寬高為 0，提供安全預設尺寸
+      const w = Math.max(300, Math.floor(rect.width || canvasContainer.clientWidth || window.innerWidth - 24));
+      const h = Math.max(220, Math.floor(rect.height || canvasContainer.clientHeight || (window.innerWidth >= 768 ? 280 : 230)));
+
+      if (w !== canvasCssW || h !== canvasCssH || canvas.width === 0 || canvas.height === 0) {
+        canvasCssW = w;
+        canvasCssH = h;
+        const dpr = Math.min(window.devicePixelRatio || 1, 2);
+        canvas.width = Math.round(w * dpr);
+        canvas.height = Math.round(h * dpr);
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      }
+    }
+
+    // 使用 ResizeObserver 即時監聽容器尺寸變化
+    if (typeof ResizeObserver !== 'undefined' && canvasContainer) {
+      const ro = new ResizeObserver(() => syncCanvasDimensions());
+      ro.observe(canvasContainer);
+    }
+    window.addEventListener('resize', syncCanvasDimensions);
+
+    function drawRoundedRectPath(context, x, y, width, height, radii) {
+      const [tl, tr, br, bl] = Array.isArray(radii) ? radii : [radii, radii, radii, radii];
+      context.beginPath();
+      context.moveTo(x + tl, y);
+      context.lineTo(x + width - tr, y);
+      context.quadraticCurveTo(x + width, y, x + width, y + tr);
+      context.lineTo(x + width, y + height - br);
+      context.quadraticCurveTo(x + width, y + height, x + width - br, y + height);
+      context.lineTo(x + bl, y + height);
+      context.quadraticCurveTo(x, y + height, x, y + height - bl);
+      context.lineTo(x, y + tl);
+      context.quadraticCurveTo(x, y, x + tl, y);
+      context.closePath();
+    }
+
+    function drawPoint(x, y, color, label, offsetX, offsetY) {
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.arc(x, y, 4.2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#041218';
+      ctx.lineWidth = 1.3;
+      ctx.stroke();
+
+      ctx.fillStyle = color;
+      ctx.font = 'bold 11px "JetBrains Mono", sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(label, x + offsetX, y + offsetY);
+    }
+
+    function drawForceArrow(x1, y1, x2, y2, color, label) {
+      const headLen = 7;
+      const angle = Math.atan2(y2 - y1, x2 - x1);
+      ctx.strokeStyle = color;
+      ctx.fillStyle = color;
+      ctx.lineWidth = 2.2;
+
+      ctx.beginPath();
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(x2, y2);
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.moveTo(x2, y2);
+      ctx.lineTo(x2 - headLen * Math.cos(angle - Math.PI / 6), y2 - headLen * Math.sin(angle - Math.PI / 6));
+      ctx.lineTo(x2 - headLen * Math.cos(angle + Math.PI / 6), y2 - headLen * Math.sin(angle + Math.PI / 6));
+      ctx.closePath();
+      ctx.fill();
+
+      ctx.font = 'bold 11px "JetBrains Mono", "Noto Sans TC", sans-serif';
+      ctx.textAlign = 'left';
+      ctx.fillText(label, x2 + 6, y2 + 4);
+    }
+
+    function renderShipScene() {
+      syncCanvasDimensions();
+
+      const W_px = canvasCssW;
+      const H_px = canvasCssH;
+      ctx.clearRect(0, 0, W_px, H_px);
+
+      // 平滑插值橫傾角度
+      const targetAngle = state.calc.thetaDeg * state.heelSign;
+      state.visualAngleDeg += (targetAngle - state.visualAngleDeg) * 0.14;
+      state.wavePhase += 0.045;
+
+      const rad = (state.visualAngleDeg * Math.PI) / 180;
+      const waterLineY = H_px * 0.60;
+
+      // 1. 深海背景與動態海面波浪線
+      ctx.save();
+      const seaGrad = ctx.createLinearGradient(0, waterLineY, 0, H_px);
+      seaGrad.addColorStop(0, 'rgba(14, 116, 144, 0.48)');
+      seaGrad.addColorStop(1, 'rgba(4, 24, 36, 0.94)');
+      ctx.fillStyle = seaGrad;
+
+      ctx.beginPath();
+      ctx.moveTo(0, H_px);
+      for (let x = 0; x <= W_px; x += 10) {
+        const wy = waterLineY + Math.sin(x * 0.025 + state.wavePhase) * 3.2;
+        ctx.lineTo(x, wy);
+      }
+      ctx.lineTo(W_px, H_px);
+      ctx.closePath();
+      ctx.fill();
+
+      // 海面波浪高光線
+      ctx.strokeStyle = 'rgba(56, 189, 248, 0.65)';
+      ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      for (let x = 0; x <= W_px; x += 10) {
+        const wy = waterLineY + Math.sin(x * 0.025 + state.wavePhase) * 3.2;
+        if (x === 0) ctx.moveTo(x, wy);
+        else ctx.lineTo(x, wy);
+      }
+      ctx.stroke();
+      ctx.restore();
+
+      // 2. 箱型船主船體幾何尺寸
+      const hullWidth = Math.min(W_px * 0.56, 350);
+      const hullHeight = Math.min(H_px * 0.46, 126);
+      const centerX = W_px * 0.5;
+      const pivotY = waterLineY;
+
+      ctx.save();
+      ctx.translate(centerX, pivotY);
+      ctx.rotate(rad);
+
+      const draftPx = hullHeight * 0.58;
+      const freeboardPx = hullHeight * 0.42;
+      const leftX = -hullWidth / 2;
+      const topY = -freeboardPx;
+      const bottomY = draftPx;
+
+      // 2a. 甲板貨櫃與駕駛台（增加真實船體識別度）
+      const containerW = hullWidth * 0.16;
+      const containerH = hullHeight * 0.14;
+      const deckColors = ['#0284c7', '#0d9488', '#d97706', '#0369a1'];
+      for (let c = 0; c < 4; c++) {
+        const cx = leftX + hullWidth * 0.08 + c * (containerW + 3);
+        const cy = topY - containerH;
+        ctx.fillStyle = deckColors[c % deckColors.length];
+        ctx.fillRect(cx, cy, containerW, containerH);
+        ctx.strokeStyle = 'rgba(255,255,255,0.28)';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(cx, cy, containerW, containerH);
+      }
+
+      // 駕駛台 (Bridge)
+      const bridgeW = hullWidth * 0.15;
+      const bridgeH = hullHeight * 0.25;
+      const bridgeX = leftX + hullWidth * 0.77;
+      const bridgeY = topY - bridgeH;
+      ctx.fillStyle = '#e2e8f0';
+      ctx.fillRect(bridgeX, bridgeY, bridgeW, bridgeH);
+      ctx.fillStyle = '#0f172a';
+      ctx.fillRect(bridgeX + 3, bridgeY + 4, bridgeW - 6, 5);
+
+      // 2b. 箱型船主船體輪廓
+      ctx.fillStyle = '#0f2937';
+      ctx.strokeStyle = '#38bdf8';
+      ctx.lineWidth = 2.5;
+      drawRoundedRectPath(ctx, leftX, topY, hullWidth, hullHeight, [3, 3, 12, 12]);
+      ctx.fill();
+      ctx.stroke();
+
+      // 船體中心線 CL
+      ctx.strokeStyle = 'rgba(148, 163, 184, 0.35)';
+      ctx.setLineDash([4, 4]);
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(0, topY - 22);
+      ctx.lineTo(0, bottomY + 12);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // 3. 底部壓載水艙分隔與自由液面線
+      const tankAreaH = hullHeight * 0.38;
+      const tankTopY = bottomY - tankAreaH;
+      const count = state.tanks.length || 2;
+      const singleW = hullWidth / count;
+
+      state.tanks.forEach((tank, idx) => {
+        const tx = leftX + idx * singleW;
+        const fill = tank.fillPct;
+        const isSlack = fill > 0.001 && fill < 0.999;
+
+        // 艙室底色
+        ctx.fillStyle = 'rgba(6, 20, 29, 0.88)';
+        ctx.fillRect(tx + 1.5, tankTopY, singleW - 3, tankAreaH - 2);
+
+        // 壓載水填充多邊形
+        if (fill > 0.001) {
+          const waterH = (tankAreaH - 3) * fill;
+          const baseWaterY = bottomY - 2 - waterH;
+          const slopeOffset = isSlack ? Math.tan(-rad) * (singleW * 0.45) : 0;
+          const wave = isSlack ? Math.sin(state.wavePhase * 1.6 + idx) * 1.6 : 0;
+
+          const yL = Math.max(tankTopY + 1, Math.min(bottomY - 3, baseWaterY - slopeOffset + wave));
+          const yR = Math.max(tankTopY + 1, Math.min(bottomY - 3, baseWaterY + slopeOffset - wave));
+
+          ctx.fillStyle = isSlack ? 'rgba(56, 189, 248, 0.56)' : 'rgba(14, 165, 233, 0.72)';
+          ctx.beginPath();
+          ctx.moveTo(tx + 1.5, bottomY - 2);
+          ctx.lineTo(tx + 1.5, yL);
+          ctx.lineTo(tx + singleW - 1.5, yR);
+          ctx.lineTo(tx + singleW - 1.5, bottomY - 2);
+          ctx.closePath();
+          ctx.fill();
+
+          // 自由液面線（可透過圖層按鈕開關）
+          if (isSlack && state.layers.showFSM) {
+            ctx.strokeStyle = '#facc15';
+            ctx.lineWidth = 2.4;
+            ctx.beginPath();
+            ctx.moveTo(tx + 1.5, yL);
+            ctx.lineTo(tx + singleW - 1.5, yR);
+            ctx.stroke();
+          }
+        }
+
+        // 縱向水密艙壁隔線
+        if (idx > 0) {
+          ctx.strokeStyle = '#7dd3fc';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(tx, tankTopY);
+          ctx.lineTo(tx, bottomY);
+          ctx.stroke();
+        }
+
+        // 被泵出的目標艙間金色外框高亮標示
+        if (tank.isTarget) {
+          ctx.strokeStyle = '#facc15';
+          ctx.lineWidth = 2.4;
+          ctx.strokeRect(tx + 1, tankTopY + 0.5, singleW - 2, tankAreaH - 2);
+        }
+
+        // 艙間代號
+        ctx.fillStyle = tank.isTarget ? '#fef08a' : '#cbd5e1';
+        ctx.font = 'bold 10px "JetBrains Mono", "Noto Sans TC", sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(tank.shortCode, tx + singleW / 2, tankTopY - 4);
+      });
+
+      // 雙重底頂板線
+      ctx.strokeStyle = '#38bdf8';
+      ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      ctx.moveTo(leftX, tankTopY);
+      ctx.lineTo(leftX + hullWidth, tankTopY);
+      ctx.stroke();
+
+      // 4. 繪製穩度點位：K, G, Gv, M 與重力箭頭 W
+      const scalePxPerMeter = hullHeight / 10.5;
+      const kY = bottomY;
+      const gY = kY - state.KG * scalePxPerMeter;
+      const gvY = kY - (state.KG + state.calc.GG1 + state.calc.G1Gv) * scalePxPerMeter;
+      const gvX = (state.heelSign * state.calc.G2Gv) * scalePxPerMeter * 9;
+      const mY = kY - state.KM * scalePxPerMeter;
+
+      // 龍骨點 K
+      drawPoint(0, kY, '#94a3b8', 'K', 0, 14);
+
+      // 重心 G 與虛重心 Gv（受圖層按鈕控制）
+      if (state.layers.showG) {
+        drawPoint(0, gY, '#38bdf8', 'G', -14, 4);
+        drawPoint(gvX, gvY, '#facc15', 'Gv', 16, 4);
+
+        // 向下重力箭頭 W
+        ctx.save();
+        ctx.translate(gvX, gvY);
+        ctx.rotate(-rad);
+        drawForceArrow(0, 0, 0, 42, '#facc15', 'W');
+        ctx.restore();
+      }
+
+      // 橫向穩心 M（受圖層按鈕控制）
+      if (state.layers.showM) {
+        drawPoint(0, mY, '#1ee396', 'M', -14, 4);
+      }
+
+      ctx.restore(); // 結束船體旋轉座標系
+
+      // 5. 浮心 B 與向上浮力箭頭 Δ
+      const buoyX = centerX + Math.sin(rad) * 26;
+      const buoyY = waterLineY + 28;
+      drawPoint(buoyX, buoyY, '#1ee396', 'B', -14, 4);
+      drawForceArrow(buoyX, buoyY, buoyX, buoyY - 46, '#1ee396', 'Δ');
+
+      // 左右舷標示
+      ctx.fillStyle = 'rgba(248, 113, 113, 0.9)';
+      ctx.font = 'bold 11px "Noto Sans TC", sans-serif';
+      ctx.textAlign = 'left';
+      ctx.fillText('◀ 左舷 PORT', 12, H_px - 10);
+
+      ctx.fillStyle = 'rgba(52, 211, 153, 0.9)';
+      ctx.textAlign = 'right';
+      ctx.fillText('右舷 STBD ▶', W_px - 12, H_px - 10);
+
+      requestAnimationFrame(renderShipScene);
+    }
+
+    // =========================================================================
+    // 9. 雙重初始化機制（DOMContentLoaded + window.onload 確保第一時間立刻繪製）
+    // =========================================================================
+    let initialized = false;
+    function bootSimulator() {
+      if (initialized) return;
+      initialized = true;
+      syncCanvasDimensions();
+      syncFromProblem('init');
+      requestAnimationFrame(renderShipScene);
+    }
+
+    document.addEventListener('DOMContentLoaded', bootSimulator);
+    window.onload = function () {
+      bootSimulator();
+      syncCanvasDimensions();
+    };
+  </script>
+</body>
+</html>
